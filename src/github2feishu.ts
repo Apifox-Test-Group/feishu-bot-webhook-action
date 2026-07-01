@@ -31,13 +31,14 @@ export async function PostGithubEvent(): Promise<number | undefined> {
 
   const actor = context.actor
   const eventType = context.eventName
-  const repo = context.payload.repository?.name || 'junka'
+  const repo = context.payload.repository?.full_name || context.repo.repo
   let status = context.payload.action || 'closed'
   let etitle =
     context.payload.issue?.html_url ||
     context.payload.pull_request?.html_url ||
     ''
   let detailurl = ''
+  let color = 'blue'
   switch (eventType) {
     case 'branch_protection_rule': {
       const rule = context.payload.rule
@@ -83,6 +84,7 @@ export async function PostGithubEvent(): Promise<number | undefined> {
       const issue = context.payload.issue
       etitle = `[No.${issue?.number} ${issue?.title}](${issue?.html_url})\n\n${issue?.body}\n\n`
       detailurl = issue?.html_url || ''
+      color = status === 'opened' || status === 'reopened' ? 'orange' : 'grey'
       break
     }
     case 'label':
@@ -101,8 +103,19 @@ export async function PostGithubEvent(): Promise<number | undefined> {
       break
     case 'public':
       break
-    case 'pull_request':
+    case 'pull_request': {
+      const pr = context.payload.pull_request
+      const merged = pr?.merged === true
+      status = merged ? 'merged' : context.payload.action || pr?.state || 'updated'
+      etitle = `[PR #${context.payload.number} ${pr?.title}](${pr?.html_url})\n\n${pr?.body || ''}\n\n${pr?.head?.label || pr?.head?.ref || ''} → ${pr?.base?.label || pr?.base?.ref || ''}`
+      detailurl = pr?.html_url || ''
+      color = merged
+        ? 'green'
+        : status === 'opened' || status === 'reopened' || status === 'synchronize'
+          ? 'purple'
+          : 'grey'
       break
+    }
     case 'pull_request_comment':
       break
     case 'pull_request_review':
@@ -130,8 +143,9 @@ export async function PostGithubEvent(): Promise<number | undefined> {
           ? 'created'
           : context.payload['forced'] === true
             ? 'force updated'
-            : ''
+            : 'updated'
       detailurl = context.payload['compare']
+      color = 'blue'
       break
     }
     case 'registry_package':
@@ -141,6 +155,7 @@ export async function PostGithubEvent(): Promise<number | undefined> {
       etitle = `${release['name']}\n${release['body']}\n${release['tag_name']}${release['prerelease'] === true ? '  prerelease' : ''}`
       status = context.payload.action || 'published'
       detailurl = release['html_url']
+      color = 'green'
       break
     }
     case 'repository_dispatch':
@@ -160,13 +175,22 @@ export async function PostGithubEvent(): Promise<number | undefined> {
       break
     case 'workflow_dispatch':
       break
-    case 'workflow_run':
+    case 'workflow_run': {
+      const workflowRun = context.payload.workflow_run
+      status = workflowRun?.conclusion || workflowRun?.status || 'completed'
+      if (status === 'success') {
+        console.log('Skip successful workflow_run notification')
+        return undefined
+      }
+      etitle = `${workflowRun?.name || 'Workflow'} ${status}\n\nbranch: ${workflowRun?.head_branch || ''}\ncommit: ${workflowRun?.head_sha || ''}`
+      detailurl = workflowRun?.html_url || ''
+      color = 'red'
       break
+    }
     default:
       break
   }
 
-  const color = 'blue'
   const cardmsg = BuildGithubNotificationCard(
     tm,
     sign,
