@@ -27,4 +27,6 @@ on:
 jobs:
   notify:
     uses: Apifox-Test-Group/.github/.github/workflows/feishu-notify.yml@main
-    secrets: inherit
+    secrets:
+      FEISHU_WEBHOOK_TEST: ${{ secrets.FEISHU_WEBHOOK_TEST }}
+      FEISHU_SIGNKEY_TEST: ${{ secrets.FEISHU_SIGNKEY_TEST }}
