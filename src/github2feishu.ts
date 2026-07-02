@@ -25,9 +25,8 @@ export async function PostGithubEvent(): Promise<number | undefined> {
   const payload = context.payload || {}
   console.log(payload)
 
-  const webhookId = webhook.slice(webhook.indexOf('hook/') + 5)
   const tm = Math.floor(Date.now() / 1000)
-  const sign = sign_with_timestamp(tm, signKey)
+  const sign = signKey ? sign_with_timestamp(tm, signKey) : ''
 
   const actor = context.actor
   const eventType = context.eventName
@@ -161,7 +160,7 @@ export async function PostGithubEvent(): Promise<number | undefined> {
     case 'repository_dispatch':
       break
     case 'schedule':
-      return PostGithubTrending(webhookId, tm, sign)
+      return PostGithubTrending(webhook, tm, sign)
     case 'status':
       break
     case 'watch':
@@ -202,5 +201,5 @@ export async function PostGithubEvent(): Promise<number | undefined> {
     etitle,
     detailurl
   )
-  return PostToFeishu(webhookId, cardmsg)
+  return PostToFeishu(webhook, cardmsg)
 }

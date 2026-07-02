@@ -43814,12 +43814,26 @@ function sign_with_timestamp(timestamp, key) {
     const signature = crypto.createHmac('SHA256', toencstr).digest('base64');
     return signature;
 }
-async function PostToFeishu(id, content) {
+function buildWebhookUrl(webhook) {
+    const trimmed = webhook.trim();
+    if (!trimmed) {
+        throw new Error('Feishu webhook is empty. Please set webhook input or FEISHU_BOT_WEBHOOK env.');
+    }
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return new URL(trimmed);
+    }
+    const hookIndex = trimmed.indexOf('hook/');
+    const token = hookIndex >= 0 ? trimmed.slice(hookIndex + 5) : trimmed;
+    return new URL(`https://open.feishu.cn/open-apis/bot/v2/hook/${token}`);
+}
+async function PostToFeishu(webhook, content) {
     return new Promise((resolve, reject) => {
+        const webhookUrl = buildWebhookUrl(webhook);
+        const chunks = [];
         const options = {
-            hostname: 'open.feishu.cn',
+            hostname: webhookUrl.hostname,
             port: 443,
-            path: `/open-apis/bot/v2/hook/${id}`,
+            path: `${webhookUrl.pathname}${webhookUrl.search}`,
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -43828,18 +43842,25 @@ async function PostToFeishu(id, content) {
         const req = https.request(options, res => {
             const statusCode = res.statusCode;
             res.on('data', d => {
-                process.stdout.write(d);
-                const result = d.toString();
-                try {
-                    const json = JSON.parse(result);
-                    core.debug(json.code);
-                    core.debug(json.msg);
-                }
-                catch (err) {
-                    console.log(err);
-                }
+                chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(d));
             });
             res.on('end', () => {
+                const result = Buffer.concat(chunks).toString();
+                if (result) {
+                    process.stdout.write(result);
+                    try {
+                        const json = JSON.parse(result);
+                        core.debug(json.code);
+                        core.debug(json.msg);
+                    }
+                    catch (err) {
+                        console.log(err);
+                    }
+                }
+                if (!statusCode || statusCode < 200 || statusCode >= 300) {
+                    reject(new Error(`Feishu webhook request failed with status ${statusCode}: ${result}`));
+                    return;
+                }
                 resolve(statusCode);
             });
         });
@@ -43907,9 +43928,8 @@ async function PostGithubEvent() {
         : process.env.FEISHU_BOT_SIGNKEY || '';
     const payload = github_1.context.payload || {};
     console.log(payload);
-    const webhookId = webhook.slice(webhook.indexOf('hook/') + 5);
     const tm = Math.floor(Date.now() / 1000);
-    const sign = (0, feishu_1.sign_with_timestamp)(tm, signKey);
+    const sign = signKey ? (0, feishu_1.sign_with_timestamp)(tm, signKey) : '';
     const actor = github_1.context.actor;
     const eventType = github_1.context.eventName;
     const repo = github_1.context.payload.repository?.full_name || github_1.context.repo.repo;
@@ -44036,7 +44056,7 @@ async function PostGithubEvent() {
         case 'repository_dispatch':
             break;
         case 'schedule':
-            return PostGithubTrending(webhookId, tm, sign);
+            return PostGithubTrending(webhook, tm, sign);
         case 'status':
             break;
         case 'watch':
@@ -44065,7 +44085,7 @@ async function PostGithubEvent() {
             break;
     }
     const cardmsg = (0, card_1.BuildGithubNotificationCard)(tm, sign, repo, eventType, color, actor, status, etitle, detailurl);
-    return (0, feishu_1.PostToFeishu)(webhookId, cardmsg);
+    return (0, feishu_1.PostToFeishu)(webhook, cardmsg);
 }
 
 
