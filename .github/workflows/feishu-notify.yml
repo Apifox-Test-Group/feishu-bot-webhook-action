@@ -2,6 +2,8 @@ name: Feishu Notify
 
 on:
   push:
+    branches:
+      - '**'
   pull_request:
     types:
       - opened
